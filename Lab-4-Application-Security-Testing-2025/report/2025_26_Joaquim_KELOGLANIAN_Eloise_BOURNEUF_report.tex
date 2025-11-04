@@ -1,0 +1,171 @@
+% LaTeX formatted report for TP4 Software Security
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french,english]{babel}
+\usepackage{geometry}
+\usepackage{hyperref}
+\usepackage{parskip}
+\usepackage{listings}
+\usepackage{xcolor}
+
+\geometry{margin=1in}
+
+\lstset{
+   basicstyle=\ttfamily\small,
+   keywordstyle=\color{blue},
+   stringstyle=\color{red!60!black},
+   frame=single,
+   breaklines=true,
+   showstringspaces=false
+}
+
+\title{TP4 -- Software Security: Audit of the Login Functionality}
+\author{Joaquim KELOGLANIAN \and Eloise BOURNEUF}
+\date{2025}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This document summarises the static and dynamic security testing performed on the application's login functionality. The focus is on relevant OWASP Top 10 categories and the CIA principles where applicable. Only vulnerabilities found in the login flow and associated services are reported.
+\end{abstract}
+
+\section{Static Security Testing}
+
+The analysis targets the Java service classes handling authentication and persistence: \texttt{DataServices.java}, \texttt{Logins.java} and \texttt{SecurePassword.java}. Below are the findings grouped by file and OWASP category.
+
+\subsection{DataServices.java}
+
+\paragraph{SQL Injection (A03:2021)}
+The code constructs SQL queries by concatenating user input into the query string. Example found in the login flow:
+
+\begin{lstlisting}
+String sql = "SELECT id, firstname, lastname, password FROM users WHERE EMAIL='" + username +"'";
+\end{lstlisting}
+
+This query is executed via \texttt{createStatement()} with no parameterization.
+
+Impact: an attacker can bypass authentication with payloads such as:\
+\begin{verbatim}
+username = ' OR '1'='1
+\end{verbatim}
+
+Recommendation: use parameterised queries (\texttt{PreparedStatement}). Example:
+
+\begin{lstlisting}
+PreparedStatement ps = conn.prepareStatement(
+   "SELECT id, firstname, lastname, password FROM users WHERE EMAIL = ?"
+);
+ps.setString(1, username);
+ResultSet rs = ps.executeQuery();
+\end{lstlisting}
+
+Avoid \texttt{createStatement()} for user-supplied input.
+
+\paragraph{Logging of Sensitive Data (A09:2021)}
+The application logs full SQL statements, including user input:
+
+\begin{lstlisting}
+System.out.println("dataService.doQuery : Execution of the query : " + sql);
+\end{lstlisting}
+
+Recommendation: never log raw SQL or user-supplied values. Log generic events or identifiers only.
+
+\paragraph{Credentials in Source (A05:2021)}
+Hard-coded database credentials were observed:
+
+\begin{lstlisting}
+DriverManager.getConnection("jdbc:postgresql://localhost:5432/" + DataBase + "?user=postgres&password=postgres");
+\end{lstlisting}
+
+Recommendation: move credentials to a secure configuration (environment variables, \texttt{application.properties}) and avoid embedding secrets in source control.
+
+\paragraph{Transport / Integrity (A08:2021)}
+No SSL/TLS options were configured for the DB connection. When supported, enable TLS (for example, add \texttt{ssl=true} to the JDBC URL) and enforce secure channels.
+
+\subsection{Logins.java}
+
+\paragraph{SQL Injection (A03:2021)}
+Same pattern as in \texttt{DataServices.java}: user input is concatenated into SQL queries. Ensure all queries are parameterised.
+
+\paragraph{Authentication Failures (A07:2021)}
+Observed issues:
+- Email regex gives limited validation but does not prevent SQL payloads.
+- No login throttling or account lockout is implemented (brute-force risk).
+- The Java session id is returned in the JSON response (\texttt{request.getSession(true).getId()}).
+
+Recommendations:
+- Implement rate-limiting or progressive delays after failed attempts.
+- Do not expose raw Java session IDs in API responses; use a proper signed token (e.g. JWT) or a secure session management mechanism.
+
+\paragraph{Access Control (A01:2021)}
+There are no checks after login to enforce role or session verification on sensitive endpoints. Add a filter (e.g. \texttt{@WebFilter}) or middleware to verify session validity and roles for protected endpoints.
+
+\paragraph{Components (A06:2021)}
+Verify dependency and container versions. Use tools like \texttt{mvn dependency:tree} or dependency-check to detect vulnerable/outdated components.
+
+\paragraph{Logging and Monitoring (A09:2021)}
+Replace \texttt{System.out.println} with a proper logging framework (SLF4J + Log4j2 or similar) and ensure failed login attempts are recorded for audit.
+
+\subsection{SecurePassword.java}
+
+\paragraph{Good practice}
+The implementation uses PBKDF2 and \texttt{SecureRandom} for salts which is better than plain hashes such as MD5.
+
+\paragraph{Implementation Bug: salt/hash order}
+The stored password format is expected as \texttt{salt:hash} but the parser was using the reverse. Incorrect parsing example found:
+
+\begin{lstlisting}
+String slt = storedPassword.split(":")[1];
+String pswd = storedPassword.split(":")[0];
+byte[] salt = fromHex(slt);
+byte[] hash = fromHex(pswd);
+\end{lstlisting}
+
+Fix:
+\begin{lstlisting}
+String[] parts = storedPassword.split(":");
+byte[] salt = fromHex(parts[0]);
+byte[] hash = fromHex(parts[1]);
+\end{lstlisting}
+
+\paragraph{Cryptographic parameters (A02:2021)}
+The iteration count (1024) is too low for modern standards. OWASP recommends using a much higher iteration count, and prefer \texttt{PBKDF2WithHmacSHA256} when using PBKDF2.
+
+Recommendation example:
+
+\begin{lstlisting}
+public static final int ITERATIONS = 310000;
+SecretKeyFactory skf = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256");
+\end{lstlisting}
+
+Consider adding a server-side pepper (a secret key stored outside the DB) concatenated before hashing to mitigate offline brute-force if the DB is leaked.
+
+\section{Summary of Findings}
+
+Key findings and recommendations (short):
+
+- \textbf{S-001 (A03:2021)}: SQL injection in \texttt{DataServices} — use \texttt{PreparedStatement}. 
+- \textbf{S-002 (A05:2021)}: DB credentials hard-coded — move to environment/config.
+- \textbf{S-003 (A09:2021)}: Sensitive logging — avoid logging raw SQL/user input.
+- \textbf{S-004 (A07:2021)}: No brute-force protection on login — add rate limiting.
+- \textbf{S-005 (A01:2021)}: Missing post-login access checks — enforce role/session verification.
+- \textbf{S-006 (A02:2021)}: Weak PBKDF2 parameters — increase iterations and use stronger algorithm.
+- \textbf{S-007 (A02:2021)}: Salt/hash parsing bug in \texttt{SecurePassword} — correct parsing order.
+
+\section{Dynamic Security Testing}
+
+Dynamic testing notes and results should be added here (runtime tests, authentication attempts, intercepted responses, etc.).
+
+\section{Next Steps}
+
+- Fix SQL injection by parameterising queries.
+- Centralise secrets in a secure configuration or environment variables.
+- Replace println-based logging with a configurable logger and avoid sensitive data in logs.
+- Increase password hashing strength and add pepper.
+- Add rate-limiting and session/token hardening.
+
+\end{document}
+
+
