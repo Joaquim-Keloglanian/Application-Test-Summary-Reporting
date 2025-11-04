@@ -1,0 +1,23 @@
+src/main/java/ishop/service/DataServices.java:6:import java.sql.Statement;
+src/main/java/ishop/service/DataServices.java:15:	private Statement pStatement = null;
+src/main/java/ishop/service/DataServices.java:53:		   pStatement =  connect.createStatement();
+src/main/java/ishop/service/DataServices.java:55:	       ResultSet rs = pStatement.executeQuery(sql);
+src/main/java/ishop/service/DataServices.java:94:	       pStatement.close();
+Binary file src/main/webapp/WEB-INF/lib/postgresql-42.7.4.jar matches
+src/main/java/ishop/service/Logins.java:49:		String password = request.getParameter("password");
+src/main/java/ishop/service/Logins.java:50:		String username = request.getParameter("username");
+src/main/java/ishop/service/DataServices.java:27:			Facts = DriverManager.getConnection("jdbc:postgresql://localhost:5432/"+ DataBase +"?user=postgres&password=postgres");
+src/main/java/ishop/service/Logins.java:49:		String password = request.getParameter("password");
+src/main/java/ishop/service/Logins.java:63:		String sql = "SELECT id, firstname, lastname, password FROM users WHERE EMAIL='" + username +"'";
+src/main/java/ishop/service/Logins.java:77:			boolean matched = SecurePassword.validatePassword(password, ans.get(1).get(3));
+src/main/java/ishop/service/Logins.java:85:					json += "\"token\": \"" + request.getSession(true).getId()+ "\"\n";
+src/main/java/ishop/service/SecurePassword.java:16:	public static String generateStrongPasswordHash(String password) throws NoSuchAlgorithmException, InvalidKeySpecException
+src/main/java/ishop/service/SecurePassword.java:18:        char[] chars = password.toCharArray();
+Binary file src/main/webapp/WEB-INF/lib/json-simple-1.1.1.jar matches
+Binary file src/main/webapp/WEB-INF/lib/postgresql-42.7.4.jar matches
+src/main/webapp/login.html:126:    			<input type="password" placeholder="Password" name="password" id="pswlogin" required>
+src/main/webapp/login.html:132:    				<p> <a href="#" onclick="document.getElementById('pwdforgot').style.display='block';return false;">I forgot my password</a></p> 
+src/main/webapp/login.html:171:<label for="password"><b>Password (at least 8 alphabetical symbols)</b><span style="color:red">&#42;</span></label>
+src/main/webapp/login.html:172:<input type="password" placeholder="password (at least 8 alphabetical symbols)" name="pass" id="psw" onchange="checkSizePassword(this)" required>
+src/main/webapp/login.html:175:      <input type="password" placeholder="Confirm your password" name="passrepeat" id="pswrep" required  onchange="checkRepeatPassword(document.getElementById('psw'),this)">
+src/main/webapp/login.html:202:      <h2>You forgot your password!? You can get access back to your account.</h2>

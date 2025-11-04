@@ -1,0 +1,9 @@
+SecSoftTest:SecSoftTest:war:0.0.1-SNAPSHOT
++- com.googlecode.json-simple:json-simple:jar:1.1.1:compile
+|  \- junit:junit:jar:4.10:compile
+|     \- org.hamcrest:hamcrest-core:jar:1.1:compile
++- org.postgresql:postgresql:jar:42.7.4:compile
+|  \- org.checkerframework:checker-qual:jar:3.42.0:runtime
++- javax.mail:javax.mail-api:jar:1.6.0:compile
++- jakarta.servlet:jakarta.servlet-api:jar:5.0.0:provided
+\- javax.activation:activation:jar:1.1.1:compile
