@@ -1,138 +1,163 @@
-Static Security Test Summary Report – Login Module (SecTestSoft2025)
+1. Objective of the Test
+The objective of this engagement was to assess the security posture of the login module by means of a static review of the server-side Java codebase and associated web resources. The review focused on authentication logic, input handling, database access patterns, cryptographic controls, error handling, and configuration. The intended outcome was to identify vulnerabilities and weaknesses and to provide clear, actionable remediation guidance.
 
-Date: 2025-11-05
-Scope: Static (source) review only. No dynamic testing performed.
-Repository path under review: Lab-4-Application-Security-Testing-2025\SecTestSoft2025\SecTestSoft2025\src\main
+2. Testing Approach
+The assessment was conducted as a manual secure code review (SAST) of the specified source tree, tracing data flows from HTTP request parameters to security-sensitive sinks such as database queries, cryptographic operations, session handling, and response generation. The review drew on OWASP ASVS v4.0.3 (authentication, session management, data protection), the OWASP Top 10 (2021), and relevant OWASP Cheat Sheets (e.g., Password Storage, SQL Injection). No compilation or execution of the application was performed. No database or application server configuration was inspected. Software composition analysis (SCA) and dynamic scanning were not included.
 
-Objective of the test
-- Assess the security posture of the login module by statically reviewing server-side Java and web resources.
-- Identify vulnerabilities and weaknesses related to authentication, input handling, database access, cryptography, error handling, and configuration.
-- Provide actionable remediation guidance and an executive-ready summary.
+3. Areas Tested
+Backend (Java)
+  • ishop/service/Logins.java: Login servlet responsible for processing POST/GET requests, constructing queries, validating passwords, and issuing session tokens.
+  • ishop/service/DataServices.java: Database connectivity and generic query execution.
+  • ishop/service/SecurePassword.java: Password hashing and verification utilities.
+Frontend / Web Resources
+  • webapp/login.html: Login form and related modals.
+  • webapp/WEB-INF/web.xml: Servlet mappings, welcome page, and context parameters.
 
-Testing approach
-- Method: Manual secure code review (SAST) of the specified source tree focusing on data flows from HTTP request parameters to security-sensitive sinks (DB queries, crypto, session handling, output).
-- Heuristics & references: OWASP ASVS v4.0.3 (authentication, session mgmt, data protection), OWASP Top 10 2021 (A01–A10), OWASP Password Storage and SQL Injection Cheat Sheets.
-- What was NOT done: No compilation, no execution, no database/Tomcat configuration inspection, no dependency SCA, and no dynamic scanning.
+4. Areas Not Tested
+The following items were not examined within the scope of this static review:
+  • Business logic and servlets referenced but not present in the reviewed source snapshot (e.g., AddUser, ForgottenPassword).
+  • Third-party libraries under WEB-INF/lib.
+  • Application server/container configuration (e.g., HTTPS enforcement, session cookie flags) and any reverse proxy or CDN settings.
+  • Database schema, roles and permissions, and production credentials.
+  • Functionality outside the login and authentication flow.
 
-Areas tested
-- Backend (Java)
-  1) ishop/service/Logins.java – Login servlet handling POST/GET, building SQL, validating password, issuing token.
-  2) ishop/service/DataServices.java – Database connection and generic query execution.
-  3) ishop/service/SecurePassword.java – Password hashing and verification utilities (PBKDF2).
-- Frontend/Web resources
-  4) webapp/login.html – Login form and related modals (sign up / forgotten password links).
-  5) webapp/WEB-INF/web.xml – Servlet mappings, welcome page, and context params.
+5. Platform Details
+  • Language/stack: Jakarta Servlet API (jakarta.servlet.*), Java, JSON-simple.
+  • Database: PostgreSQL (org.postgresql.Driver).
+  • Environment: Review conducted on Windows. A hard-coded JDBC URL referencing localhost:5432 was observed.
 
-Areas not tested
-- Business logic and servlets referenced but not present in this source sample (e.g., AddUser, ForgottenPassword) beyond their mention in HTML.
-- Third-party libraries under WEB-INF/lib (not inspected).
-- Server/container configuration (e.g., Tomcat HTTPS, session cookie flags) and reverse proxy/CDN setups.
-- Database schema, roles/permissions, and production credentials.
-- Any functionality outside the login/authentication flow.
-
-Platform details
-- Language/stack: Jakarta Servlet API (jakarta.servlet.*), Java, JSON-simple.
-- Database: PostgreSQL (via org.postgresql.Driver).
-- Environment: Static review on Windows; no runtime assumptions made. Observed hard-coded JDBC URL to localhost:5432.
-
-Defect report (static findings)
+6. Defect Report (Static Findings)
 Severity scale: Critical, High, Medium, Low
 
-[CRITICAL-1] Broken password validation (salt/hash reversed; shortened key length)
-- Location: SecurePassword.java::validatePassword
-- Issue: storedPassword format is "salt:hash" (per generateStrongPasswordHash), but validatePassword splits and treats part[1] as salt and part[0] as hash. It then derives a key length based on the salt length (typically 16 bytes → 128 bits), not the original 512-bit length, and compares against the wrong array. This likely causes systematic auth failures and/or inconsistent behavior.
-- Risk: Authentication may fail for valid users; if operators compensate in storage format, this still reduces derived key length, weakening resistance to offline cracking.
-- Recommendation: Correct parsing to salt = part[0], hash = part[1]; derive with the same key length used at generation; add constant-time comparison. Add unit tests for both generation/validation.
+CRITICAL-1: Broken password validation (salt/hash order; reduced derived key length)
+  • Location: SecurePassword.java (validatePassword)
+  • Description: Passwords are stored as "salt:hash" by generateStrongPasswordHash. In validatePassword, the components are parsed in reverse (part[1] used as salt and part[0] used as hash). The derived key length for PBKDF2 is then based on the (misinterpreted) hash byte array which actually corresponds to the salt length (typically 16 bytes → 128 bits), rather than the original 512-bit PBKDF2 output. This results in incorrect verification and materially weakens the protection against offline attacks.
+  • Impact: Valid users may be denied access. If storage is adapted to match the bug, the effective hash length is significantly reduced, increasing susceptibility to brute-force attacks.
+  • Recommendation: Parse as salt = part[0], hash = part[1]. Derive the PBKDF2 output with the same bit length used at generation. Compare using a constant-time method. Introduce unit tests for both generation and validation paths.
 
-[HIGH-1] SQL query built via string concatenation (SQL Injection risk)
-- Location: Logins.java (builds "SELECT ... WHERE EMAIL='" + username + "'"), DataServices.java (Statement.executeQuery(sql)).
-- Issue: User-supplied input (username) is concatenated into SQL. Although a restrictive email regex is applied, this is brittle and not a substitute for parameterized queries.
-- Risk: SQL Injection if validation weakens/changes elsewhere; unsafe pattern encourages future mistakes; generic DataServices encourages arbitrary unsanitized queries.
-- Recommendation: Use PreparedStatement with bind parameters; centralize safe query helpers; minimize dynamic SQL; return domain objects instead of raw String matrices.
+HIGH-1: SQL constructed via string concatenation (SQL Injection risk)
+  • Location: Logins.java (concatenated WHERE clause using username); DataServices.java (Statement.executeQuery(sql)).
+  • Description: User-controlled input (username) is concatenated into SQL statements. Although a restrictive email regex is applied, input validation is not a substitute for parameterized queries.
+  • Impact: Risk of SQL Injection if validation is bypassed, altered, or reused incorrectly. The generic DataServices pattern encourages additional unsafe queries.
+  • Recommendation: Replace with PreparedStatement and bind parameters. Provide safe query helpers and return domain objects rather than string matrices.
 
-[HIGH-2] Hard-coded database credentials
-- Location: DataServices.java::databaseConnection
-- Issue: JDBC URL contains user=postgres&password=postgres in source.
-- Risk: Credential leakage, inability to rotate, accidental reuse across environments.
-- Recommendation: Externalize secrets (JNDI DataSource, environment variables, or a secrets manager). Remove credentials from source control.
+HIGH-2: Hard-coded database credentials
+  • Location: DataServices.java (databaseConnection)
+  • Description: The JDBC URL embeds user=postgres and password=postgres in source control.
+  • Impact: Credential leakage, operational inflexibility, and risk of reuse across environments.
+  • Recommendation: Externalize secrets via JNDI DataSource, environment variables, or a secrets manager. Remove credentials from the codebase.
 
-[HIGH-3] Weak KDF parameters and algorithm choice
-- Location: SecurePassword.java (ITERATIONS=1024, PBKDF2WithHmacSHA1 512-bit)
-- Issue: Iteration count is far below current guidance; HMAC-SHA1 is legacy.
-- Risk: Faster brute-force/offline cracking of stolen hashes.
-- Recommendation: Adopt PBKDF2WithHmacSHA256 with ≥210,000 iterations (OWASP 2023 guidance; calibrate to ~100ms on server hardware) or Argon2id with memory-hard params. Store as algorithm:iterations:salt:hash.
+HIGH-3: Outdated and under-strength password hashing parameters
+  • Location: SecurePassword.java (ITERATIONS=1024; PBKDF2WithHmacSHA1)
+  • Description: The iteration count is below current recommendations, and HMAC-SHA1 is legacy.
+  • Impact: Increased feasibility of offline cracking of stolen password hashes.
+  • Recommendation: Adopt PBKDF2WithHmacSHA256 with a calibrated iteration count (e.g., ≥210,000; target ~100ms on production hardware), or use Argon2id with memory-hard parameters. Store as algorithm:iterations:salt:hash.
 
-[MEDIUM-1] Missing safe handling when user not found
-- Location: Logins.java
-- Issue: Accesses ans.get(1) without verifying result contains a row (ans.size()>1). If user doesn’t exist, this can throw IndexOutOfBoundsException → potential 500 errors.
-- Risk: Error handling bypasses intended 401 and may leak details if stack traces are exposed.
-- Recommendation: Explicitly handle no-row case and return 401 consistently without exception.
+MEDIUM-1: Missing handling for “user not found”
+  • Location: Logins.java
+  • Description: The code accesses ans.get(1) without confirming that a row exists (ans.size() > 1). If the user is not found, an IndexOutOfBoundsException may occur.
+  • Impact: Potential HTTP 500 responses and information leakage if stack traces are exposed.
+  • Recommendation: Check for an empty result set and return HTTP 401 for invalid credentials without throwing exceptions.
 
-[MEDIUM-2] Sensitive information in logs
-- Location: DataServices.java logs raw SQL; stack traces printed in both DataServices and Logins.
-- Risk: Log mining disclosure of queries and internals.
-- Recommendation: Use a logging framework, avoid logging sensitive values; log minimal context at INFO/ERROR without PII/secrets; disable stack traces to end users.
+MEDIUM-2: Excessive logging and stack traces
+  • Location: DataServices.java and Logins.java
+  • Description: Raw SQL statements and stack traces are printed to standard output.
+  • Impact: Potential disclosure of sensitive information through log mining.
+  • Recommendation: Use a structured logging framework. Avoid logging sensitive values. Log minimal context at appropriate levels and suppress stack traces from end users.
 
-[MEDIUM-3] Incorrect response Content-Type for JSON
-- Location: Logins.java
-- Issue: Sets text/html but returns JSON.
-- Risk: Content sniffing, tooling interop issues, and potential XSS vectors in some contexts.
-- Recommendation: Set application/json; include X-Content-Type-Options: nosniff. Consider cache controls for auth responses.
+MEDIUM-3: Incorrect response Content-Type for JSON
+  • Location: Logins.java
+  • Description: The response Content-Type is set to text/html while a JSON document is returned.
+  • Impact: Content sniffing issues, tooling incompatibilities, and potential security side effects.
+  • Recommendation: Set Content-Type to application/json and add X-Content-Type-Options: nosniff. Consider appropriate cache-control headers for authentication responses.
 
-[MEDIUM-4] No CSRF protection on state-changing endpoints
-- Location: login.html (form), Logins.java
-- Issue: No anti-CSRF token or SameSite policy consideration.
-- Risk: While login CSRF is less impactful than sensitive state changes, it can still cause unwanted sessions (“login CSRF”) or contribute to clickjacking flows.
-- Recommendation: Rely on SameSite=Lax/Strict cookies and for privileged actions require CSRF tokens. Consider CSRF defenses framework-wide.
+MEDIUM-4: Lack of CSRF protections
+  • Location: login.html; Logins.java
+  • Description: No anti-CSRF token is implemented, and there is no explicit SameSite strategy.
+  • Impact: Risk of login CSRF and contribution to clickjacking or session fixation patterns.
+  • Recommendation: Rely on SameSite=Lax/Strict cookies for authentication and require CSRF tokens for state-changing actions. Apply protections consistently across the application.
 
-[MEDIUM-5] Session token exposure pattern
-- Location: Logins.java
-- Issue: Returns session ID in JSON. If not strictly over HTTPS and with proper cookie flags, interception risk increases.
-- Recommendation: Use container-managed session cookie (HttpOnly, Secure, SameSite) and avoid echoing session IDs in bodies. If an API token is required, issue a dedicated opaque token or JWT with proper scopes and rotation.
+MEDIUM-5: Session identifier exposed in response body
+  • Location: Logins.java
+  • Description: The servlet returns the session ID in the JSON body.
+  • Impact: If transport or cookie flags are misconfigured, the session may be more easily intercepted or abused.
+  • Recommendation: Rely on container-managed session cookies (HttpOnly, Secure, SameSite) and avoid echoing session IDs in JSON. If an API token is required, issue a dedicated opaque token or a well-configured JWT with rotation.
 
-[MEDIUM-6] External script without Subresource Integrity (SRI)
-- Location: login.html (jQuery from ajax.googleapis.com)
-- Risk: Supply-chain risk if CDN is compromised.
-- Recommendation: Add integrity + crossorigin attributes or self-host.
+MEDIUM-6: External script without Subresource Integrity (SRI)
+  • Location: login.html (jQuery from ajax.googleapis.com)
+  • Description: The external resource is included without integrity and crossorigin attributes.
+  • Impact: Supply-chain risk if the CDN is compromised.
+  • Recommendation: Add SRI attributes or self-host the dependency. Consider a baseline Content Security Policy (CSP).
 
-[LOW-1] Resource handling and cleanup patterns
-- Location: DataServices.java
-- Issue: No try-with-resources; potential leaks on exceptions.
-- Recommendation: Adopt try-with-resources for Connection/Statement/ResultSet.
+LOW-1: Resource management patterns
+  • Location: DataServices.java
+  • Description: JDBC resources are not managed with try-with-resources, risking leaks on exceptions.
+  • Impact: Potential resource leaks and instability under error conditions.
+  • Recommendation: Adopt try-with-resources for Connection, Statement, and ResultSet.
 
-[LOW-2] Dual servlet mappings (annotation + web.xml)
-- Location: Logins.java (@WebServlet("/Logins")), web.xml ("/ishop/service/Logins").
-- Issue: Redundant/overlapping routes increase attack surface and maintenance complexity.
-- Recommendation: Choose a single mapping strategy (prefer annotations) and remove the other, or ensure both are required and consistently protected.
+LOW-2: Overlapping servlet mappings
+  • Location: Logins.java (@WebServlet("/Logins")); web.xml ("/ishop/service/Logins")
+  • Description: Both annotation-based and deployment-descriptor mappings are defined.
+  • Impact: Increased maintenance complexity and a larger externally reachable surface area.
+  • Recommendation: Standardize on either annotations or web.xml for mapping. Remove redundant routes.
 
-[LOW-3] No transport security policy in deployment descriptor
-- Location: web.xml
-- Issue: No <security-constraint> enforcing CONFIDENTIAL for auth endpoints.
-- Recommendation: Enforce HTTPS transport; configure HSTS at edge.
+LOW-3: Absence of transport security policy in web.xml
+  • Location: web.xml
+  • Description: No security-constraint is defined to enforce CONFIDENTIAL (HTTPS) for authentication endpoints.
+  • Impact: Risk of clear-text transmission if deployed without external TLS enforcement.
+  • Recommendation: Enforce HTTPS via security-constraints and/or infrastructure (TLS termination with HSTS).
 
-[LOW-4] PRNG algorithm selection
-- Location: SecurePassword.java
-- Issue: SecureRandom.getInstance("SHA1PRNG") is legacy.
-- Recommendation: Use new SecureRandom() or getInstanceStrong() (with care for blocking behavior), and explicitly document salt length.
+LOW-4: Legacy PRNG selection
+  • Location: SecurePassword.java
+  • Description: SecureRandom.getInstance("SHA1PRNG") is used.
+  • Impact: Reliance on a legacy algorithm without material benefit.
+  • Recommendation: Use new SecureRandom() or getInstanceStrong() (with consideration for blocking behavior). Document salt size explicitly.
 
-Testing metrics (static)
-- Files reviewed: 5
-  - Java: 3 (Logins.java, DataServices.java, SecurePassword.java)
-  - Web: 2 (login.html, WEB-INF/web.xml)
-- Findings: 1 Critical, 3 High, 6 Medium, 4 Low (14 total)
-- Coverage: 100% of files in scope for the login module under the specified path.
+7. Testing Metrics (Static)
+  • Files reviewed: 5
+    – Java: 3 (Logins.java, DataServices.java, SecurePassword.java)
+    – Web: 2 (login.html, WEB-INF/web.xml)
+  • Findings: 1 Critical, 3 High, 6 Medium, 4 Low (14 total)
+  • Coverage: 100% of files in scope for the login module under the specified path.
 
-Overall summary
-The login module presents several significant issues. The most urgent are: (1) fixing the broken password verification (salt/hash order and key length), (2) eliminating dynamic SQL in favor of PreparedStatement, (3) removing hard-coded DB credentials, and (4) modernizing password hashing parameters. Medium-priority improvements include robust error handling for not-found users, safer logging, correct JSON Content-Type with security headers, CSRF/session hardening, and SRI for third-party scripts. Low-priority but worthwhile hardening items include consolidating servlet mappings, enforcing HTTPS at the descriptor or infrastructure level, adopting try-with-resources, and using modern PRNG.
+8. Overall Summary
+The login module exhibits several material security issues. The most urgent remediations are: (1) correcting the password verification logic to align with the storage format and intended derived key length; (2) eliminating dynamic SQL in favor of parameterized queries; (3) removing hard-coded database credentials; and (4) modernizing password hashing parameters and algorithms. Medium-priority improvements include robust handling of nonexistent users, safe logging practices, use of the correct JSON Content-Type with defensive headers, CSRF/session hardening, and the addition of SRI for external scripts. Low-priority but valuable hardening includes consolidating servlet mappings, enforcing HTTPS at the descriptor or infrastructure level, adopting try-with-resources for JDBC, and using a modern PRNG.
 
-Recommended next steps (priority order)
-1) Correct SecurePassword.validatePassword() to parse salt/hash in the same order they are stored and align key length/algorithm with generation.
-2) Replace string SQL building with PreparedStatement and minimal-result queries; validate email server-side but do not rely on regex for injection defense.
-3) Externalize DB credentials via JNDI or environment/secret management; remove hard-coded secrets from source.
-4) Upgrade KDF to PBKDF2-HMAC-SHA256 with ≥210k iterations (or Argon2id) and migrate stored hashes.
-5) Handle no-user-found path without exceptions; always return 401 for invalid credentials.
-6) Set Content-Type: application/json and security headers (X-Content-Type-Options: nosniff; reasonable cache policy).
-7) Avoid returning session IDs in bodies; rely on secure, HttpOnly cookies or issue purpose-built tokens.
-8) Add SRI to external scripts or self-host; consider CSP in the application.
-9) Consolidate servlet mappings; enforce HTTPS with security-constraints and infra (TLS/HSTS).
-10) Adopt try-with-resources for JDBC; add centralized logging with redaction.
+9. Recommended Next Steps (Priority Order)
+  1) Correct SecurePassword.validatePassword() to parse salt and hash in the stored order and to derive the intended key length/algorithm. Add unit tests.
+  2) Replace dynamic SQL with PreparedStatement-based queries; retain email validation but do not rely on it for injection defense.
+  3) Externalize database credentials (JNDI, environment variables, or secrets management) and remove hard-coded secrets from source.
+  4) Upgrade the KDF to PBKDF2-HMAC-SHA256 with a calibrated iteration count (or Argon2id) and plan a migration of existing hashes.
+  5) Handle “user not found” conditions without exceptions and consistently return HTTP 401 for invalid credentials.
+  6) Set Content-Type: application/json and add X-Content-Type-Options: nosniff; apply suitable cache controls.
+  7) Avoid returning session identifiers in response bodies; rely on secure, HttpOnly cookies or issue purpose-built tokens.
+  8) Add SRI to external scripts (or self-host) and consider deploying a baseline CSP.
+  9) Consolidate servlet mappings and enforce HTTPS via security-constraints and infrastructure (TLS/HSTS).
+  10) Adopt try-with-resources for JDBC and implement centralized, redacted logging.
+
+Appendix A. Suggested Screenshots (concise)
+To support the static findings with minimal but sufficient visual evidence, capture the following code excerpts. Keep each screenshot tightly cropped to the specified lines.
+
+1) CRITICAL-1 (Broken password validation)
+  • File: src/main/java/ishop/service/SecurePassword.java, lines 45–53
+  • Rationale: Shows reversed parsing of salt/hash and the derived key length based on the wrong component.
+
+2) HIGH-1 (SQL concatenation)
+  • File: src/main/java/ishop/service/Logins.java, lines 63–68
+  • Rationale: Shows construction of a query via string concatenation and execution via DataServices.doQuery.
+
+3) HIGH-2 (Hard-coded DB credentials)
+  • File: src/main/java/ishop/service/DataServices.java, lines 24–28
+  • Rationale: Shows the JDBC URL embedding user and password.
+
+4) HIGH-3 (Weak KDF parameters and legacy algorithm)
+  • File: src/main/java/ishop/service/SecurePassword.java, lines 14–27
+  • Rationale: Shows ITERATIONS=1024 and PBKDF2WithHmacSHA1/512-bit output length used at generation.
+
+5) MEDIUM findings combined (content type, unsafe indexing, session token in body)
+  • File: src/main/java/ishop/service/Logins.java, lines 74–86
+  • Rationale: A single capture evidences (a) text/html Content-Type while returning JSON, (b) direct access to ans.get(1).get(3), and (c) returning the session ID in the JSON response.
+
+6) MEDIUM-6 (External script without SRI)
+  • File: src/main/webapp/login.html, lines 232–236 (focus on line ~234)
+  • Rationale: Shows the jQuery CDN include without integrity and crossorigin attributes.
