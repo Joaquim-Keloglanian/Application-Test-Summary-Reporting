@@ -49,13 +49,16 @@ public class Logins extends HttpServlet {
 		String password = request.getParameter("password");
 		String username = request.getParameter("username");
 	
+		System.out.println("Login attempt for user: " + username);
 		
 		Pattern mailpattern = Pattern.compile("^\\w+[\\.]*\\w+@([\\w-]+\\.)+[\\w-]{2,4}$");
 		Matcher m = mailpattern.matcher(username);
 		boolean isemail = m.matches();
 		
+		System.out.println("Email validation result: " + isemail);
 		
 		if(!isemail){
+			System.out.println("Email validation failed, sending 401");
 			response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
 			return;
 		}
@@ -66,7 +69,10 @@ public class Logins extends HttpServlet {
 		
 		ArrayList<ArrayList<String>> ans = dsc.doQuery("ishope", sql);
 		
+		System.out.println("DB query result: " + (ans != null ? "user found" : "user not found"));
+		
 		if(ans == null){
+			System.out.println("User not found in DB, sending 401");
 			response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
 			return;
 		}
@@ -75,7 +81,9 @@ public class Logins extends HttpServlet {
 		
 		try {
 			boolean matched = SecurePassword.validatePassword(password, ans.get(1).get(3));
+			System.out.println("Password validation result: " + matched);
 				if (matched) {
+					System.out.println("Login successful, returning JSON");
 					String json = "{\n";
 					
 					json += "\"user\": \"" + JSONObject.escape(username) + "\",\n";
@@ -88,10 +96,12 @@ public class Logins extends HttpServlet {
 					response.getOutputStream().println(json);
 						
 				} else {
+					System.out.println("Password mismatch, sending 401");
 					   response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
 
 				   }
 			} catch (NoSuchAlgorithmException | InvalidKeySpecException e) {
+				System.out.println("Exception in password validation: " + e.getMessage());
 				// TODO Auto-generated catch block
 				response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
 				e.printStackTrace();
