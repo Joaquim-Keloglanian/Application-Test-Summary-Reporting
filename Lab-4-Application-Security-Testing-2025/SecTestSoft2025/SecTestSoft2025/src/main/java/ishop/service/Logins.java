@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.security.NoSuchAlgorithmException;
 import java.security.spec.InvalidKeySpecException;
 import java.util.ArrayList;
+import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -23,6 +24,7 @@ import jakarta.servlet.http.HttpServletResponse;
 public class Logins extends HttpServlet {
 
     private static final long serialVersionUID = 1L;
+    private static final Logger logger = Logger.getLogger(Logins.class.getName());
 
 	/**
      * Default constructor. 
@@ -49,16 +51,16 @@ public class Logins extends HttpServlet {
 		String password = request.getParameter("password");
 		String username = request.getParameter("username");
 	
-		System.out.println("Login attempt for user: " + username);
+		logger.info("Login attempt for user: " + username);
 		
 		Pattern mailpattern = Pattern.compile("^\\w+[\\.]*\\w+@([\\w-]+\\.)+[\\w-]{2,4}$");
 		Matcher m = mailpattern.matcher(username);
 		boolean isemail = m.matches();
 		
-		System.out.println("Email validation result: " + isemail);
+		logger.info("Email validation result: " + isemail);
 		
 		if(!isemail){
-			System.out.println("Email validation failed, sending 401");
+			logger.info("Email validation failed, sending 401");
 			response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
 			return;
 		}
@@ -69,10 +71,10 @@ public class Logins extends HttpServlet {
 		
 		ArrayList<ArrayList<String>> ans = dsc.doQuery("ishope", sql);
 		
-		System.out.println("DB query result: " + (ans != null ? "user found" : "user not found"));
+		logger.info("DB query result: " + (ans != null ? "user found" : "user not found"));
 		
 		if(ans == null){
-			System.out.println("User not found in DB, sending 401");
+			logger.info("User not found in DB, sending 401");
 			response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
 			return;
 		}
@@ -81,9 +83,9 @@ public class Logins extends HttpServlet {
 		
 		try {
 			boolean matched = SecurePassword.validatePassword(password, ans.get(1).get(3));
-			System.out.println("Password validation result: " + matched);
+			logger.info("Password validation result: " + matched);
 				if (matched) {
-					System.out.println("Login successful, returning JSON");
+					logger.info("Login successful, returning JSON");
 					String json = "{\n";
 					
 					json += "\"user\": \"" + JSONObject.escape(username) + "\",\n";
@@ -96,12 +98,12 @@ public class Logins extends HttpServlet {
 					response.getOutputStream().println(json);
 						
 				} else {
-					System.out.println("Password mismatch, sending 401");
+					logger.info("Password mismatch, sending 401");
 					   response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
 
 				   }
 			} catch (NoSuchAlgorithmException | InvalidKeySpecException e) {
-				System.out.println("Exception in password validation: " + e.getMessage());
+				logger.info("Exception in password validation: " + e.getMessage());
 				// TODO Auto-generated catch block
 				response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
 				e.printStackTrace();
