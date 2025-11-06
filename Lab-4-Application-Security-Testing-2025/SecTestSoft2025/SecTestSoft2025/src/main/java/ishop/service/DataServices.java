@@ -7,12 +7,14 @@ import java.sql.Statement;
 
 
 import java.util.ArrayList;
+import java.util.logging.Logger;
 
 
 public class DataServices {
 	
 	private Connection Facts = null;
 	private Statement pStatement = null;
+	private static final Logger logger = Logger.getLogger(DataServices.class.getName());
 		
 	public  DataServices ()
 	{}
@@ -27,17 +29,17 @@ public class DataServices {
 			Facts = DriverManager.getConnection("jdbc:postgresql://localhost:5432/"+ DataBase +"?user=postgres&password=postgres");
          	if (Facts != null)
          	{
-         		System.out.println("databaseConnection: Connection established to " + DataBase + " database.");
+         		logger.info("databaseConnection: Connection established to " + DataBase + " database.");
          		return Facts;
          	}
          	else
          	{
-         		System.out.println("databaseConnection: Connection failed to " + DataBase + " database.");
+         		logger.info("databaseConnection: Connection failed to " + DataBase + " database.");
          		return null;
          	}
 		} catch (Exception e)
 		{
-         System.out.println ("databaseConnection: Bloc exception : " + e.getMessage());
+         logger.info ("databaseConnection: Bloc exception : " + e.getMessage());
          e.printStackTrace();
          return null;
 		}
@@ -54,7 +56,7 @@ public class DataServices {
 		   
 	       ResultSet rs = pStatement.executeQuery(sql);
 
-	       System.out.println("dataService.doQuery : Execution of the query : " + sql + "\n");
+	       logger.info("dataService.doQuery : Execution of the query : " + sql + "\n");
 	       int nb = rs.getMetaData().getColumnCount();
 	       
 	       ArrayList <String> clmName = new ArrayList <String> ();
@@ -96,8 +98,8 @@ public class DataServices {
 	       return result;     
 	   } catch (Exception e)
 	   		{
-		   System.out.println(sql);		
-		   System.out.println ("doQuery(): Bloc exception: " + e.getMessage());
+		   logger.info(sql);		
+		   logger.info ("doQuery(): Bloc exception: " + e.getMessage());
 	       		return null;
 	   		}
 	 }
