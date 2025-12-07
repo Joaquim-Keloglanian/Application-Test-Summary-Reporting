@@ -15,7 +15,7 @@ id="WebApp_ID" version="4.0">
   </servlet>
   <servlet-mapping>
     <servlet-name>Logins</servlet-name>
-    <url-pattern>/ishop/service/Logins</url-pattern>
+    <url-pattern>/Logins</url-pattern>
   </servlet-mapping>
 
  <context-param>
